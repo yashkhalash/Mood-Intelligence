@@ -20,9 +20,14 @@ from PIL import Image
 import json
 
 app = Flask(__name__)
-UPLOAD_FOLDER = "uploads"
+# Ensure required directories exist relative to the application root
+UPLOAD_FOLDER = os.path.join(app.root_path, "uploads")
+HISTORY_FOLDER = os.path.join(app.root_path, "static", "history")
+
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-DB_PATH = "mood_history.db"
+os.makedirs(HISTORY_FOLDER, exist_ok=True)
+
+DB_PATH = os.path.join(app.root_path, "mood_history.db")
 
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
@@ -166,7 +171,7 @@ def analyze():
             
             # Save cropped face for history
             thumb_filename = f"face_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.jpg"
-            thumb_path = os.path.join("static/history", thumb_filename)
+            thumb_path = os.path.join(HISTORY_FOLDER, thumb_filename)
             
             # Save to history if high confidence
             if confidence >= 0.6:
