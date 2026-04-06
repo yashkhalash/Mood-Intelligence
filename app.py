@@ -127,16 +127,21 @@ def analyze():
     file.save(file_path)
 
     try:
-        # Optimization: Resize large images before analysis to speed up processing & reduce memory
-        # Very important for RetinaFace on CPU
+        # Optimization: Resize large images and ensure RGB mode for stability
+        # Very important for RetinaFace on CPU and saving as JPEG
         with Image.open(file_path) as img:
+            orig_mode = img.mode
             max_size = 1000
-            if max(img.size) > max_size:
-                ratio = max_size / max(img.size)
-                new_size = (int(img.width * ratio), int(img.height * ratio))
-                print(f"Resized image from {img.size} to {new_size}")
-                img = img.resize(new_size, Image.Resampling.LANCZOS)
-                img.save(file_path)
+            needs_resize = max(img.size) > max_size
+            
+            if orig_mode != 'RGB' or needs_resize:
+                img = img.convert('RGB')
+                if needs_resize:
+                    ratio = max_size / max(img.size)
+                    new_size = (int(img.width * ratio), int(img.height * ratio))
+                    print(f"Resized image from {img.size} to {new_size}")
+                    img = img.resize(new_size, Image.Resampling.LANCZOS)
+                img.save(file_path, format='JPEG', quality=95)
 
         # Using 'retinaface' for higher accuracy
         # Optimized with image resizing above
