@@ -263,4 +263,4 @@ def delete_history(item_id):
 if __name__ == '__main__':
     # Disable reloader for stability during model loads
     # Enable threaded for better handling of concurrent requests/timeouts
-    app.run(debug=True, host='0.0.0.0', use_reloader=False, threaded=True)
+    app.run(debug=False, host='0.0.0.0', use_reloader=False, threaded=True)
