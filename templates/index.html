@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mood Intelligence</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="icon" type="image/png" href="/static/favicon.png">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: rgba(15, 23, 42, 0.85);
+            --accent-color: #22c55e;
+            --accent-glow: rgba(34, 197, 94, 0.5);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --glass-border: rgba(255, 255, 255, 0.1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            background-image: 
+                linear-gradient(rgba(15, 23, 42, 0.8), rgba(15, 23, 42, 0.8)),
+                url('https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=2070');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 30px;
+        }
+
+        @media (max-width: 1000px) {
+            .container { grid-template-columns: 1fr; }
+        }
+
+        .main-column { display: flex; flex-direction: column; gap: 30px; }
+
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            transition: border-color 1.5s ease, box-shadow 1.5s ease;
+        }
+
+        .scan-card { 
+            text-align: center; 
+            border-top: 3px solid var(--accent-color);
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 20px;
+            color: var(--accent-color);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .preview-container {
+            position: relative;
+            width: 100%;
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 20px;
+            background: #000;
+            aspect-ratio: 16/9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #imagePreview, #videoFeed {
+            width: 100%;
+            height: 100%;
+            max-height: 500px;
+            object-fit: contain;
+        }
+
+        #faceCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .custom-file-upload, .webcam-btn {
+            padding: 12px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: 0.3s;
+            color: var(--text-secondary);
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .custom-file-upload:hover, .webcam-btn:hover {
+            border-color: var(--accent-color);
+            color: var(--text-primary);
+            background: rgba(255,255,255,0.1);
+        }
+
+        .webcam-btn.active {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: #ef4444;
+            color: #f87171;
+        }
+
+        #imageInput { display: none; }
+
+        .detect-btn {
+            width: 100%;
+            padding: 18px;
+            border: none;
+            border-radius: 12px;
+            background: var(--accent-color);
+            color: white;
+            font-weight: bold;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: 0.3s;
+            text-transform: uppercase;
+        }
+
+        .detect-btn:hover {
+            box-shadow: 0 0 20px var(--accent-glow);
+            transform: translateY(-2px);
+        }
+
+        .result-card {
+            background: rgba(15, 23, 42, 0.9);
+            border-radius: 12px;
+            padding: 24px;
+            animation: fadeIn 0.5s ease-out;
+            display: none;
+        }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        .face-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        .score-row { margin-bottom: 12px; }
+        .score-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            margin-bottom: 6px;
+            color: var(--text-secondary);
+        }
+
+        .progress-bar {
+            height: 6px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--accent-color);
+            width: 0;
+            transition: width 1s ease-in-out, background-color 1.5s ease;
+        }
+
+        /* Pulse Animation */
+        @keyframes boxPulse {
+            0% { opacity: 0.6; stroke-width: 4; }
+            50% { opacity: 1; stroke-width: 6; filter: drop-shadow(0 0 8px var(--accent-color)); }
+            100% { opacity: 0.6; stroke-width: 4; }
+        }
+
+        .vibe-badge {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--accent-color);
+            border: 1px solid var(--accent-color);
+            padding: 4px 12px;
+            border-radius: 100px;
+            margin-bottom: 10px;
+            display: inline-block;
+        }
+
+        .recommendation-box {
+            margin-top: 24px;
+            padding: 20px;
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid rgba(34, 197, 94, 0.2);
+            border-left: 4px solid var(--accent-color);
+            border-radius: 8px;
+        }
+
+        .rec-title {
+            color: var(--accent-color);
+            font-weight: 700;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .rec-link {
+            display: inline-block;
+            margin-top: 12px;
+            color: white;
+            text-decoration: none;
+            background: var(--accent-color);
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            transition: 0.3s;
+        }
+
+        .rec-link:hover { filter: brightness(1.1); }
+
+        /* Dashboard Sidebar */
+        .sidebar { display: flex; flex-direction: column; gap: 30px; }
+        .stat-card {
+            min-height: 380px;
+            display: flex;
+            flex-direction: column;
+        }
+        .chart-container {
+            flex: 1;
+            position: relative;
+            min-height: 250px;
+        }
+        
+        .history-list {
+            list-style: none;
+            max-height: 500px;
+            overflow-y: auto;
+            padding-right: 10px;
+        }
+
+        /* Custom Scrollbar */
+        .history-list::-webkit-scrollbar { width: 5px; }
+        .history-list::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); }
+        .history-list::-webkit-scrollbar-thumb { background: var(--accent-color); border-radius: 5px; }        .history-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 10px 14px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .history-card:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: var(--accent-color);
+            transform: scale(1.02);
+        }
+
+        .history-thumb {
+            width: 50px;
+            height: 50px;
+            border-radius: 10px;
+            object-fit: cover;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .history-info {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .history-meta {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            display: flex;
+            gap: 8px;
+        }
+
+        .history-actions {
+            text-align: right;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 6px;
+        }
+
+        /* Scanning Animation */
+        .scan-line {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: var(--accent-color);
+            box-shadow: 0 0 20px var(--accent-color), 0 0 40px var(--accent-color);
+            z-index: 15;
+            display: none;
+            opacity: 0.8;
+            pointer-events: none;
+        }
+
+        @keyframes scanAnim {
+            0% { top: 0%; }
+            50% { top: 100%; }
+            100% { top: 0%; }
+        }
+
+        .scanning .scan-line {
+            display: block;
+            animation: scanAnim 2s infinite linear;
+        }
+
+        .delete-btn {
+            color: rgba(248, 113, 113, 0.7);
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 4px;
+            font-size: 1.1rem;
+            transition: color 0.3s, transform 0.3s;
+        }
+
+        .history-item .badge {
+            background: var(--accent-color);
+            color: white;
+            padding: 1px 6px;
+            border-radius: 4px;
+            text-transform: capitalize;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+
+        .history-meta {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+
+        .delete-btn {
+            background: none;
+            border: none;
+            color: #ef4444;
+            cursor: pointer;
+            padding: 5px;
+            opacity: 0.6;
+            transition: 0.3s;
+        }
+
+        .delete-btn:hover {
+            opacity: 1;
+            transform: scale(1.2);
+        }
+
+        /* Modal System */
+        .modal {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
+            backdrop-filter: blur(12px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            padding: 20px;
+        }
+
+        .modal-content {
+            background: rgba(15, 23, 42, 0.95);
+            border: 1px solid rgba(248, 113, 113, 0.5);
+            padding: 40px;
+            border-radius: 28px;
+            max-width: 480px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.8), 0 0 30px rgba(248, 113, 113, 0.15);
+            animation: modalPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative;
+            overflow: hidden;
+        }
+
+        @keyframes modalPop {
+            from { transform: scale(0.9); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        .modal-icon {
+            font-size: 3.5rem;
+            margin-bottom: 20px;
+            display: block;
+            filter: drop-shadow(0 0 10px rgba(248, 113, 113, 0.5));
+        }
+
+        .modal-title {
+            font-size: 1.6rem;
+            font-weight: 800;
+            margin-bottom: 12px;
+            color: #f87171;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .modal-text {
+            color: var(--text-secondary);
+            line-height: 1.6;
+            margin-bottom: 30px;
+            font-size: 1rem;
+        }
+
+        .modal-btn {
+            background: linear-gradient(135deg, #f87171, #ef4444);
+            color: white;
+            padding: 14px 35px;
+            border-radius: 14px;
+            border: none;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 4px 15px rgba(248, 113, 113, 0.3);
+        }
+
+        .modal-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(248, 113, 113, 0.5);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="errorModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-icon">🚫</span>
+            <div class="modal-title" id="errorTitle">Detection Failed</div>
+            <div class="modal-text" id="errorText">Bio-signature not detected. Please ensure your face is clearly visible and well-lit.</div>
+            <button class="modal-btn" onclick="closeModal()">DISMISS SYSTEM ALERT</button>
+        </div>
+    </div>
+
+    <div id="notificationContainer"></div>
+
+    <div class="container">
+        <div class="main-column">
+            <div class="card scan-card">
+                <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 20px;">
+                    <img src="/static/images/logo.png" alt="Neural Face Logo" style="height: 60px; border-radius: 12px; box-shadow: 0 4px 15px var(--accent-glow);">
+                    <h1 style="margin: 0; font-size: 1.8rem; font-weight: 800; letter-spacing: -1px;">Mood <span style="color: var(--accent-color)">Intelligence</span></h1>
+                </div>
+                
+                <div class="preview-container" id="previewContainer">
+                    <div class="scan-line" id="scanLine"></div>
+                    <img id="imagePreview" src="/static/images/placeholder.png" alt="Upload Placeholder" style="display: block; opacity: 0.5;">
+                    <video id="videoFeed" autoplay playsinline style="display: none;"></video>
+                    <canvas id="faceCanvas"></canvas>
+                </div>
+
+                <div class="controls">
+                    <label for="imageInput" class="custom-file-upload">
+                        📁 <span>Upload Photo</span>
+                    </label>
+                    <button class="webcam-btn" id="webcamBtn" onclick="toggleWebcam()">
+                        📷 <span>Live Video</span>
+                    </button>
+                    <input type="file" id="imageInput" accept="image/*" />
+                </div>
+
+                <button class="detect-btn" id="detectBtn" onclick="processAnalysis()">Analyze Emotional State</button>
+                <div class="loader" id="loader"></div>
+            </div>
+
+            <div id="resultCard" class="card result-card">
+                <!-- Content injected via JS -->
+            </div>
+        </div>
+
+        <div class="sidebar">
+            <div class="card stat-card card-highlight">
+                <h3 style="margin-bottom: 15px; color: var(--accent-color);">Mood Trends</h3>
+                <div class="chart-container">
+                    <canvas id="moodChart"></canvas>
+                </div>
+            </div>
+
+            <div class="card card-highlight" style="margin-top: 20px;">
+                <h3 style="margin-bottom: 15px; color: var(--accent-color);">Recent History</h3>
+                <div class="history-list" id="historyList">
+                    <!-- History items injected here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const imageInput = document.getElementById('imageInput');
+        const imagePreview = document.getElementById('imagePreview');
+        const videoFeed = document.getElementById('videoFeed');
+        const webcamBtn = document.getElementById('webcamBtn');
+        const faceCanvas = document.getElementById('faceCanvas');
+        const resultCard = document.getElementById('resultCard');
+        const loader = document.getElementById('loader');
+        const historyList = document.getElementById('historyList');
+
+        let isWebcamActive = false;
+        let stream = null;
+        let chart = null;
+
+        // Initialize Chart
+        function initChart(stats) {
+            const ctx = document.getElementById('moodChart').getContext('2d');
+            if (chart) chart.destroy();
+            
+            chart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(stats),
+                    datasets: [{
+                        data: Object.values(stats),
+                        backgroundColor: Object.keys(stats).map(mood => getMoodColor(mood.toLowerCase())),
+                        borderWidth: 0,
+                        hoverOffset: 10
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { 
+                        legend: { 
+                            display: true, 
+                            position: 'bottom',
+                            labels: {
+                                color: 'rgba(255,255,255,0.7)',
+                                font: { size: 11, weight: '600' },
+                                padding: 15,
+                                usePointStyle: true,
+                                pointStyle: 'circle'
+                            }
+                        }
+                    },
+                    cutout: '70%'
+                }
+            });
+        }
+
+        async function fetchStats() {
+            try {
+                const res = await fetch('/stats');
+                const data = await res.json();
+                
+                const chartCanvas = document.getElementById('moodChart');
+                const chartContainer = chartCanvas.parentElement;
+
+                if (!data || Object.keys(data).length === 0) {
+                    chartCanvas.style.display = 'none';
+                    if (!document.getElementById('statsPlaceholder')) {
+                        const placeholder = document.createElement('div');
+                        placeholder.id = 'statsPlaceholder';
+                        placeholder.style.display = 'flex';
+                        placeholder.style.flexDirection = 'column';
+                        placeholder.style.alignItems = 'center';
+                        placeholder.style.justifyContent = 'center';
+                        placeholder.style.height = '280px';
+                        placeholder.style.color = 'var(--text-secondary)';
+                        placeholder.style.textAlign = 'center';
+                        placeholder.innerHTML = `
+                            <span style="font-size: 2.5rem; margin-bottom: 10px; opacity: 0.5;">📊</span>
+                            <p style="font-size: 0.9rem; opacity: 0.7;">Waiting for trend data...<br>Perform a few scans to see analysis.</p>`;
+                        chartContainer.appendChild(placeholder);
+                    }
+                    return;
+                } else {
+                    chartCanvas.style.display = 'block';
+                    const placeholder = document.getElementById('statsPlaceholder');
+                    if (placeholder) placeholder.remove();
+                }
+
+                initChart(data);
+            } catch (err) {
+                console.error("Stats fetch failed:", err);
+            }
+        }
+
+        async function fetchHistory() {
+            const res = await fetch('/history?t=' + Date.now());
+            const data = await res.json();
+            const list = document.getElementById('historyList');
+            
+            if (!data || data.length === 0) {
+                list.innerHTML = `
+                    <div class="empty-state">
+                        <span style="font-size: 2.5rem; margin-bottom: 10px; opacity: 0.5;">📂</span>
+                        <p style="font-size: 0.9rem; opacity: 0.7;">No activity yet.<br>Start by scanning a face!</p>
+                    </div>`;
+                return;
+            }
+
+            list.innerHTML = data.map(item => {
+                return `
+                <div class="history-card" onclick='loadReport(${JSON.stringify(item)})'>
+                    <img src="${item.image_url || '/static/images/placeholder.png'}" class="history-thumb" alt="Face thumb">
+                    <div class="history-info">
+                        <span class="mood-badge badge-${item.mood.toLowerCase()}" style="align-self: flex-start;">${item.mood}</span>
+                        <div class="history-meta">
+                            <span>${item.gender}</span>
+                            <span>•</span>
+                            <span>Age ${item.age}</span>
+                        </div>
+                    </div>
+                    <div class="history-actions">
+                        <button class="delete-btn" onclick="deleteHistory(event, ${item.id})" title="Delete entry">🗑️</button>
+                        <div class="history-date">${item.timestamp}</div>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function getMoodColor(mood) {
+            const colors = {
+                'happy': '#22c55e',
+                'sad': '#3b82f6',
+                'angry': '#ef4444',
+                'neutral': '#64748b',
+                'surprise': '#eab308',
+                'fear': '#a855f7',
+                'disgust': '#f97316'
+            };
+            return colors[mood.toLowerCase()] || '#ffffff';
+        }
+
+        async function deleteHistory(event, id) {
+            event.stopPropagation();
+            if (!confirm("Remove this entry from system history?")) return;
+            
+            try {
+                const res = await fetch(`/history/delete/${id}`, { method: 'DELETE' });
+                if (res.ok) {
+                    showToast("Record purged.", "success");
+                    fetchHistory();
+                    fetchStats();
+                }
+            } catch (err) {
+                showToast("System error during deletion.", "error");
+            }
+        }
+
+        async function loadReport(item) {
+            // If it's a history item, we don't have 'region' for the canvas easily 
+            // unless we store it. But we can at least show the card data.
+            
+            // To make it look "Pro", we'll fetch insights for this mood
+            // We can reuse showFinalResult if we mock the region or store it
+            
+            const mood = item.mood.toLowerCase();
+            const mockFace = {
+                mood: item.mood,
+                scores: item.scores || {},
+                gender: item.gender,
+                age: item.age,
+                wisdom: getMoodWisdom(mood),
+                recommendation: getMoodRec(mood),
+                link: getMoodLink(mood),
+                rec_icon: getMoodIcon(mood),
+                region: {x:0, y:0, w:0, h:0} // Hide box for history items
+            };
+            
+            // Update image preview to show the thumbnail if available
+            if (item.image_url) {
+                imagePreview.src = item.image_url;
+                imagePreview.style.opacity = '1';
+                videoFeed.style.display = 'none';
+                isWebcamActive = false;
+            }
+
+            showFinalResults([mockFace]);
+        }
+
+        // Helper functions for frontend insights (redundant but avoids extra API calls for history)
+        function getMoodWisdom(mood) {
+            const wisdom = {
+                "angry": "Patience is the best remedy for anger. Take a deep breath.",
+                "disgust": "Focus on the beauty within and around you.",
+                "fear": "Courage is not the absence of fear, but the triumph over it.",
+                "happy": "Happiness is a choice, not a result. Keep shining!",
+                "sad": "This too shall pass. Every cloud has a silver lining.",
+                "surprise": "Life is full of surprises. Embrace the unexpected!",
+                "neutral": "A calm mind brings inner strength and self-confidence."
+            };
+            return wisdom[mood] || "Stay mindful.";
+        }
+        function getMoodRec(mood) {
+            const rec = {
+                "angry": "Listen to calming lo-fi beats", "happy": "Check out upbeat pop", "sad": "Watch motivational content",
+                "fear": "Read a short summary of 'The Power of Now'", "neutral": "Focus with Pomodoro", "surprise": "Explore TED talks"
+            };
+            return rec[mood] || "Take a deep breath.";
+        }
+        function getMoodLink(mood) {
+            const links = {
+                "angry": "https://open.spotify.com/playlist/37i9dQZF1DWWQRwui0Ex7X", "happy": "https://open.spotify.com/playlist/37i9dQZF1DXdPec7aLTmlq",
+                "sad": "https://www.youtube.com/results?search_query=motivational+speech", "neutral": "https://pomofocus.io/"
+            };
+            return links[mood] || "#";
+        }
+        function getMoodIcon(mood) {
+            const icons = {"happy":"🎸", "sad":"📽️", "angry":"🎵", "neutral":"💻", "fear":"📖", "surprise":"🌟"};
+            return icons[mood] || "✨";
+        }
+
+        function getMoodColor(mood) {
+            const colors = {
+                'happy': '#22c55e',
+                'sad': '#3b82f6',
+                'angry': '#ef4444',
+                'fear': '#a855f7',
+                'surprise': '#eab308',
+                'neutral': '#64748b'
+            };
+            return colors[mood.toLowerCase()] || '#22c55e';
+        }
+
+        // Initial Load
+        fetchStats();
+        fetchHistory();
+
+        imageInput.onchange = evt => {
+            const [file] = imageInput.files;
+            if (file) {
+                if (isWebcamActive) toggleWebcam();
+                imagePreview.src = URL.createObjectURL(file);
+                imagePreview.style.display = 'block';
+                imagePreview.style.opacity = '1';
+                videoFeed.style.display = 'none';
+                clearCanvas();
+            }
+        }
+
+        async function toggleWebcam() {
+            if (isWebcamActive) {
+                stream.getTracks().forEach(track => track.stop());
+                videoFeed.style.display = 'none';
+                imagePreview.style.display = 'block';
+                webcamBtn.classList.remove('active');
+                webcamBtn.innerHTML = '📷 <span>Live Video</span>';
+                isWebcamActive = false;
+            } else {
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    videoFeed.srcObject = stream;
+                    videoFeed.style.display = 'block';
+                    imagePreview.style.display = 'none';
+                    webcamBtn.classList.add('active');
+                    webcamBtn.innerHTML = '⏹️ <span>Stop Video</span>';
+                    isWebcamActive = true;
+                    clearCanvas();
+                } catch (err) {
+                    alert("Could not access webcam");
+                }
+            }
+        }
+
+        function clearCanvas() {
+            const ctx = faceCanvas.getContext('2d');
+            ctx.clearRect(0, 0, faceCanvas.width, faceCanvas.height);
+        }
+
+        async function processAnalysis() {
+            let blob;
+            if (isWebcamActive) {
+                const canvas = document.createElement('canvas');
+                canvas.width = videoFeed.videoWidth;
+                canvas.height = videoFeed.videoHeight;
+                canvas.getContext('2d').drawImage(videoFeed, 0, 0);
+                
+                // Show the capture in the preview area
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+                imagePreview.src = dataUrl;
+                imagePreview.style.display = 'block';
+                imagePreview.style.opacity = '1';
+                
+                // Stop webcam to show "frozen" preview
+                toggleWebcam(); 
+                
+                blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.95));
+            } else {
+                const file = imageInput.files[0];
+                if (!file) return alert("Upload a photo or start webcam");
+                blob = file;
+            }
+
+            loader.style.display = 'block';
+            previewContainer.classList.add('scanning');
+            resultCard.style.display = 'none';
+
+            const formData = new FormData();
+            formData.append("image", blob, "scan.jpg");
+
+            try {
+                const res = await fetch('/analyze', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await res.json();
+                loader.style.display = 'none';
+                previewContainer.classList.remove('scanning');
+
+                if (data.error) {
+                    showToast(data.error, 'error');
+                } else {
+                    showFinalResults(data.faces);
+                    fetchStats();
+                    fetchHistory();
+                    showToast("Analysis complete!", "success");
+                }
+            } catch (err) {
+                console.error("Analysis Error:", err);
+                const msg = err.name === 'SyntaxError' ? "Analysis completed but response timed out. Please refresh." : "Connection error. Please try again.";
+                showToast(msg, "error");
+                // Refresh anyway after a bit if it was likely a timeout but saved
+                setTimeout(() => window.location.reload(), 4000);
+            } finally {
+                loader.style.display = 'none';
+            }
+        }
+
+        function showErrorModal(title, msg) {
+            document.getElementById('errorTitle').innerText = title;
+            document.getElementById('errorText').innerText = msg;
+            document.getElementById('errorModal').style.display = 'flex';
+        }
+
+        function closeModal() {
+            document.getElementById('errorModal').style.display = 'none';
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('notificationContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            const icon = type === 'error' ? '⚠️' : '✅';
+            toast.innerHTML = `<span class="toast-icon">${icon}</span><span class="toast-msg">${message}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => toast.classList.add('show'), 10);
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 400);
+            }, 4000);
+        }
+
+        function showFinalResults(faces) {
+            if (!faces || faces.length === 0) return;
+            
+            // Setup Canvas
+            faceCanvas.width = isWebcamActive ? videoFeed.videoWidth : imagePreview.naturalWidth;
+            faceCanvas.height = isWebcamActive ? videoFeed.videoHeight : imagePreview.naturalHeight;
+            const ctx = faceCanvas.getContext('2d');
+            ctx.clearRect(0, 0, faceCanvas.width, faceCanvas.height);
+
+            const root = document.documentElement;
+            // Primary theme from first face
+            const primary = faces[0];
+            if (primary.theme_color) {
+                root.style.setProperty('--accent-color', primary.theme_color);
+                root.style.setProperty('--accent-glow', primary.theme_glow);
+            }
+
+            resultCard.innerHTML = `<h3 style="margin-bottom: 25px; font-weight: 800; color: var(--accent-color);">AI Analysis: ${faces.length} Personality${faces.length > 1 ? 's' : ''} Detected</h3>`;
+            
+            faces.forEach((face, index) => {
+                const { x, y, w, h } = face.region;
+                
+                // Draw Box
+                ctx.strokeStyle = face.theme_color || '#22c55e';
+                ctx.lineWidth = 4;
+                ctx.setLineDash([10, 5]);
+                ctx.strokeRect(x, y, w, h);
+                ctx.setLineDash([]);
+                
+                // Card for this face
+                const faceEl = document.createElement('div');
+                faceEl.style.padding = "25px";
+                faceEl.style.marginBottom = "25px";
+                faceEl.style.background = "rgba(255,255,255,0.02)";
+                faceEl.style.borderRadius = "15px";
+                faceEl.style.borderLeft = `4px solid ${face.theme_color}`;
+                
+                faceEl.innerHTML = `
+                    <div class="face-header">
+                        <div>
+                            <div class="vibe-badge" style="color: ${face.theme_color}; border-color: ${face.theme_color}">${face.vibe} Vibe</div>
+                            <h2 style="text-transform: capitalize;">${face.mood}</h2>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-weight: 700; color: ${face.theme_color}; font-size: 1.4rem;">${face.gender}</div>
+                            <div style="color: var(--text-secondary); font-size: 0.8rem;">Est. Age ${face.age}</div>
+                        </div>
+                    </div>
+                    
+                    <p style="font-style: italic; color: var(--text-secondary); margin: 15px 0;">"${face.wisdom}"</p>
+
+                    <div style="display: flex; gap: 10px; margin: 20px 0; overflow-x: auto; padding-bottom: 5px;">
+                        ${Object.entries(face.scores).sort((a,b)=>b[1]-a[1]).slice(0, 4).map(([name, score]) => `
+                            <div style="background: rgba(255,255,255,0.05); padding: 8px 12px; border-radius: 8px; flex-shrink: 0;">
+                                <div style="font-size: 0.65rem; color: var(--text-secondary); text-transform: uppercase;">${name}</div>
+                                <div style="font-weight: 700; font-size: 0.9rem; color: ${face.theme_color}">${Math.round(score)}%</div>
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <div class="recommendation-box" style="margin-top: 15px; background: rgba(0,0,0,0.2);">
+                        <div style="display: flex; justify-content: space-between; align-items: start;">
+                            <div>
+                                <div style="font-size: 0.7rem; font-weight: 800; color: var(--text-secondary); margin-bottom: 5px;">PERSONAL RECOMMENDATION</div>
+                                <div style="font-size: 1rem; font-weight: 600;">${face.recommendation}</div>
+                            </div>
+                            <span style="font-size: 1.8rem;">${face.rec_icon}</span>
+                        </div>
+                        <a href="${face.link}" target="_blank" style="display: inline-block; margin-top: 12px; color: ${face.theme_color}; font-weight: 700; text-decoration: none; font-size: 0.9rem;">TAKE ACTION →</a>
+                    </div>
+                `;
+                resultCard.appendChild(faceEl);
+            });
+
+            resultCard.style.display = 'block';
+            resultCard.scrollIntoView({ behavior: 'smooth' });
+        }
+    </script>
+</body>
+</html>
