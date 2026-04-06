@@ -1,0 +1,23 @@
+# Flask/Python
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Database (keep local, not for prod)
+*.db
+
+# Media/Uploads (these should be stored in persistent storage or ephemeral disk)
+uploads/*
+!uploads/.gitkeep
+static/history/*
+!static/history/.gitkeep
+
+# IDEs
+.vscode/
+.idea/
+.DS_Store
