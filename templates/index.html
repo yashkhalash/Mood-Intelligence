@@ -545,6 +545,7 @@
         const resultCard = document.getElementById('resultCard');
         const loader = document.getElementById('loader');
         const historyList = document.getElementById('historyList');
+        const previewContainer = document.getElementById('previewContainer');
 
         let isWebcamActive = false;
         let stream = null;
@@ -646,9 +647,7 @@
                     <div class="history-info">
                         <span class="mood-badge badge-${item.mood.toLowerCase()}" style="align-self: flex-start;">${item.mood}</span>
                         <div class="history-meta">
-                            <span>${item.gender}</span>
-                            <span>•</span>
-                            <span>Age ${item.age}</span>
+                            <span>Analysis complete</span>
                         </div>
                     </div>
                     <div class="history-actions">
@@ -699,8 +698,6 @@
             const mockFace = {
                 mood: item.mood,
                 scores: item.scores || {},
-                gender: item.gender,
-                age: item.age,
                 wisdom: getMoodWisdom(mood),
                 recommendation: getMoodRec(mood),
                 link: getMoodLink(mood),
@@ -852,7 +849,7 @@
                 if (data.error) {
                     showToast(data.error, 'error');
                 } else {
-                    showFinalResults(data.faces);
+                    showFinalResults(data.faces, data.model_metadata, data.analyzed_image);
                     fetchStats();
                     fetchHistory();
                     showToast("Analysis complete!", "success");
@@ -892,36 +889,116 @@
             }, 4000);
         }
 
-        function showFinalResults(faces) {
+        /* Map boxes from server-analyzed pixels → preview (object-fit: contain inside container). */
+        function getImageContainLayout(imgEl, containerEl) {
+            const cw = containerEl.clientWidth;
+            const ch = containerEl.clientHeight;
+            const iw = imgEl.naturalWidth;
+            const ih = imgEl.naturalHeight;
+            if (!iw || !ih) {
+                return { ox: 0, oy: 0, dispW: cw, dispH: ch, scale: cw };
+            }
+            const ir = iw / ih;
+            const cr = cw / ch;
+            let dispW, dispH, ox, oy;
+            if (ir > cr) {
+                dispW = cw;
+                dispH = cw / ir;
+                ox = 0;
+                oy = (ch - dispH) / 2;
+            } else {
+                dispH = ch;
+                dispW = ch * ir;
+                ox = (cw - dispW) / 2;
+                oy = 0;
+            }
+            return { ox, oy, dispW, dispH, scale: dispW / iw };
+        }
+
+        function mapAnalyzedRegionToCanvas(region, analyzedWh, naturalWh, layout) {
+            const aw = analyzedWh.width;
+            const ah = analyzedWh.height;
+            const nw = naturalWh.width;
+            const nh = naturalWh.height;
+            const sx = nw / aw;
+            const sy = nh / ah;
+            const xn = region.x * sx;
+            const yn = region.y * sy;
+            const wn = region.w * sx;
+            const hn = region.h * sy;
+            return {
+                x: layout.ox + xn * layout.scale,
+                y: layout.oy + yn * layout.scale,
+                w: wn * layout.scale,
+                h: hn * layout.scale,
+            };
+        }
+
+        function showFinalResults(faces, modelMetadata = {}, analyzedImage = null) {
             if (!faces || faces.length === 0) return;
             
-            // Setup Canvas
-            faceCanvas.width = isWebcamActive ? videoFeed.videoWidth : imagePreview.naturalWidth;
-            faceCanvas.height = isWebcamActive ? videoFeed.videoHeight : imagePreview.naturalHeight;
+            const natW = imagePreview.naturalWidth;
+            const natH = imagePreview.naturalHeight;
+            const aw = analyzedImage && analyzedImage.width ? analyzedImage.width : natW;
+            const ah = analyzedImage && analyzedImage.height ? analyzedImage.height : natH;
+            const layout = getImageContainLayout(imagePreview, previewContainer);
+            faceCanvas.width = previewContainer.clientWidth;
+            faceCanvas.height = previewContainer.clientHeight;
             const ctx = faceCanvas.getContext('2d');
             ctx.clearRect(0, 0, faceCanvas.width, faceCanvas.height);
 
             const root = document.documentElement;
-            // Primary theme from first face
             const primary = faces[0];
             if (primary.theme_color) {
                 root.style.setProperty('--accent-color', primary.theme_color);
                 root.style.setProperty('--accent-glow', primary.theme_glow);
             }
 
-            resultCard.innerHTML = `<h3 style="margin-bottom: 25px; font-weight: 800; color: var(--accent-color);">AI Analysis: ${faces.length} Personality${faces.length > 1 ? 's' : ''} Detected</h3>`;
+            const nf = faces.length;
+            const titleSuffix = nf === 1 ? '1 face detected' : `${nf} faces — per-person results below`;
+
+            let accuracyHtml = '';
+            if (modelMetadata) {
+                const trainAcc = modelMetadata.training_accuracy || 0;
+                const detAcc = modelMetadata.detection_accuracy || 0;
+                accuracyHtml = `
+                    <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: -15px; margin-bottom: 25px; display: flex; flex-direction: column; gap: 5px;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="display: inline-block; width: 8px; height: 8px; background: #22c55e; border-radius: 50%; box-shadow: 0 0 5px #22c55e;"></span>
+                            Mood Analysis Precision: <span style="color: #22c55e; font-weight: 700;">${trainAcc}%</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="display: inline-block; width: 8px; height: 8px; background: #3b82f6; border-radius: 50%; box-shadow: 0 0 5px #3b82f6;"></span>
+                            Face detection benchmark: <span style="color: #3b82f6; font-weight: 700;">${detAcc}%</span> 
+                            <span style="opacity: 0.5; font-size: 0.7rem;">(WIDER FACE calibration in training pipeline)</span>
+                        </div>
+                        <div style="opacity: 0.5; font-size: 0.7rem; margin-top: 2px;">Last System Update: ${modelMetadata.last_trained || 'Just now'}</div>
+                    </div>
+                `;
+            }
+
+            resultCard.innerHTML = `
+                <h3 style="margin-bottom: 8px; font-weight: 800; color: var(--accent-color);">Face-wise analysis</h3>
+                <p style="margin-bottom: 25px; color: var(--text-secondary); font-size: 0.95rem;">${titleSuffix}</p>
+                ${accuracyHtml}
+            `;
             
             faces.forEach((face, index) => {
-                const { x, y, w, h } = face.region;
+                const r = face.region || {};
+                const box = mapAnalyzedRegionToCanvas(r, { width: aw, height: ah }, { width: natW, height: natH }, layout);
+                const faceNum = face.face_index != null ? face.face_index : index + 1;
                 
-                // Draw Box
-                ctx.strokeStyle = face.theme_color || '#22c55e';
-                ctx.lineWidth = 4;
-                ctx.setLineDash([10, 5]);
-                ctx.strokeRect(x, y, w, h);
-                ctx.setLineDash([]);
+                if (box.w > 2 && box.h > 2) {
+                    ctx.strokeStyle = face.theme_color || '#22c55e';
+                    ctx.lineWidth = 3;
+                    ctx.setLineDash([10, 5]);
+                    ctx.strokeRect(box.x, box.y, box.w, box.h);
+                    ctx.setLineDash([]);
+                    ctx.font = 'bold 13px Inter, sans-serif';
+                    ctx.fillStyle = face.theme_color || '#22c55e';
+                    ctx.fillText(`Face ${faceNum}`, box.x + 4, Math.max(16, box.y - 6));
+                }
                 
-                // Card for this face
                 const faceEl = document.createElement('div');
                 faceEl.style.padding = "25px";
                 faceEl.style.marginBottom = "25px";
@@ -932,17 +1009,16 @@
                 faceEl.innerHTML = `
                     <div class="face-header">
                         <div>
+                            <div style="font-size:0.75rem;font-weight:800;color:var(--text-secondary);letter-spacing:0.06em;margin-bottom:6px;">FACE ${faceNum} OF ${nf}</div>
                             <div class="vibe-badge" style="color: ${face.theme_color}; border-color: ${face.theme_color}">${face.vibe} Vibe</div>
                             <h2 style="text-transform: capitalize;">${face.mood}</h2>
                         </div>
                         <div style="text-align: right;">
-                            <div style="font-weight: 700; color: ${face.theme_color}; font-size: 1.4rem;">${face.gender}</div>
-                            <div style="color: var(--text-secondary); font-size: 0.8rem;">Est. Age ${face.age}</div>
+                            <div style="font-weight: 700; color: ${face.theme_color}; font-size: 1.4rem;">${Math.round(face.confidence * 100)}%</div>
+                            <div style="color: var(--text-secondary); font-size: 0.8rem;">Detection confidence</div>
                         </div>
                     </div>
-                    
                     <p style="font-style: italic; color: var(--text-secondary); margin: 15px 0;">"${face.wisdom}"</p>
-
                     <div style="display: flex; gap: 10px; margin: 20px 0; overflow-x: auto; padding-bottom: 5px;">
                         ${Object.entries(face.scores).sort((a,b)=>b[1]-a[1]).slice(0, 4).map(([name, score]) => `
                             <div style="background: rgba(255,255,255,0.05); padding: 8px 12px; border-radius: 8px; flex-shrink: 0;">
@@ -951,7 +1027,6 @@
                             </div>
                         `).join('')}
                     </div>
-
                     <div class="recommendation-box" style="margin-top: 15px; background: rgba(0,0,0,0.2);">
                         <div style="display: flex; justify-content: space-between; align-items: start;">
                             <div>
