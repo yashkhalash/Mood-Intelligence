@@ -21,3 +21,4 @@ static/history/*
 .vscode/
 .idea/
 .DS_Store
+raf_db_extracted

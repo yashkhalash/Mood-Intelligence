@@ -1,13 +1,14 @@
 Flask==3.0.0
-deepface>=0.0.99
-tf_keras
-tensorflow
-Pillow
-gunicorn==25.3.0
+mediapipe
+torch
+torchvision
 opencv-python-headless
 numpy
-pandas
+Pillow
 scikit-learn
-datasets
-huggingface-hub
-retina-face
+pandas
+gunicorn==25.3.0
+
+
+# download dataset
+#kaggle datasets download -d shahzadabbas/expression-in-the-wild-expw-dataset -p "/home/ns-44/Desktop/Mood Detector/data/expw_dataset" --unzip

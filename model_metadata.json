@@ -1,1 +1,1 @@
-{"training_accuracy": 51.56, "validation_accuracy": 54.96, "per_class_accuracy": {"angry": 41.77, "disgust": 0.0, "fear": 28.49, "happy": 79.62, "neutral": 51.73, "sad": 49.25, "surprise": 69.26}, "last_trained": "2026-04-08 14:24:18"}
+{"validation_accuracy": 75.1, "last_trained": "2026-04-22 21:48:13", "model_type": "mobilenet_v2", "framework": "pytorch", "classes": ["1", "2", "3", "4", "5", "6", "7"], "seed": 42, "epochs": 40, "freeze_epochs": 10, "unfreeze_last_blocks": 6}

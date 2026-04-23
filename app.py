@@ -1,37 +1,30 @@
 import os
-
-
-
-import tensorflow as tf
-from flask import Flask, request, jsonify, render_template, send_from_directory
-from deepface import DeepFace
-import numpy as np
 import sqlite3
-from datetime import datetime
-from PIL import Image
 import json
+from datetime import datetime
+from flask import Flask, request, jsonify, render_template, send_from_directory
+from PIL import Image
+import numpy as np
 
-# Force Legacy Keras (Keras 2) for compatibility with DeepFace on TF 2.16+
-# os.environ["TF_USE_LEGACY_KERAS"] = "1"
-# os.environ["KERAS_BACKEND"] = "tensorflow"
-
-# Force CPU mode to avoid CUDA errors on non-GPU systems
-# Must be set BEFORE importing DeepFace or TensorFlow
+# Force CPU mode (this project is CPU-first)
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-# Suppress TF logs for a cleaner terminal
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
-app = Flask(__name__)
 
-# Pre-load custom models if they exist
-CUSTOM_MODEL_PATH = os.path.join(app.root_path, "custom_emotion_model.h5")
-EMOTION_MODEL = None
-if os.path.exists(CUSTOM_MODEL_PATH):
-    try:
-        # Load the custom EfficientNet model
-        EMOTION_MODEL = tf.keras.models.load_model(CUSTOM_MODEL_PATH)
-        print("Successfully loaded custom EfficientNet emotion model.")
-    except Exception as e:
-        print(f"Failed to load custom model: {e}")
+# Suppress PyTorch CUDA warnings
+import warnings
+warnings.filterwarnings('ignore', category=UserWarning, module='torch.cuda')
+try:
+    import torch
+    torch.cuda.is_available = lambda: False
+except ImportError:
+    pass
+
+# Import engine (backwards-compatible API, now MediaPipe + PyTorch)
+from mood_detector import EmotionEngine
+
+# Initialize Emotion Engine (auto-loads models/raf_db_emotion_model.pth if present)
+engine = EmotionEngine()
+
+app = Flask(__name__)
 
 # Ensure required directories exist relative to the application root
 UPLOAD_FOLDER = os.path.join(app.root_path, "uploads")
@@ -139,31 +132,26 @@ def analyze():
 
     try:
         # Optimization: Resize large images and ensure RGB mode for stability
-        # Very important for RetinaFace on CPU and saving as JPEG
+        # Very important for YOLOv8 and saving as JPEG
         with Image.open(file_path) as img:
-            orig_mode = img.mode
-            max_size = 1000
-            needs_resize = max(img.size) > max_size
-            
-            if orig_mode != 'RGB' or needs_resize:
+            # Handle RGBA and other non-RGB modes immediately to fix "cannot write mode RGBA as JPEG"
+            if img.mode != 'RGB':
                 img = img.convert('RGB')
-                if needs_resize:
-                    ratio = max_size / max(img.size)
-                    new_size = (int(img.width * ratio), int(img.height * ratio))
-                    print(f"Resized image from {img.size} to {new_size}")
-                    img = img.resize(new_size, Image.Resampling.LANCZOS)
-                img.save(file_path, format='JPEG', quality=95)
+            
+            max_size = 1000
+            if max(img.size) > max_size:
+                ratio = max_size / max(img.size)
+                new_size = (int(img.width * ratio), int(img.height * ratio))
+                print(f"Resized image from {img.size} to {new_size}")
+                img = img.resize(new_size, Image.Resampling.LANCZOS)
+            
+            # Save back as JPEG to ensure compatibility with YOLO and backend
+            img.save(file_path, format='JPEG', quality=95)
             analyzed_w, analyzed_h = img.size
 
-        # Face detection: RetinaFace's Keras model uses tf.shape() on KerasTensors, which
-        # crashes on TF 2.16+ / Keras 3. YuNet (ONNX via OpenCV) works and is fast/accurate.
-        detector = os.environ.get("DEEPFACE_DETECTOR", "yunet")
-        results = DeepFace.analyze(
-            img_path=file_path,
-            actions=['emotion'],
-            enforce_detection=False,
-            detector_backend=detector,
-        )
+        # Use the new EmotionEngine for detection and prediction
+        # This handles YOLOv8-face and MobileNetV2
+        results = engine.process_image(file_path)
 
         if not results:
             return jsonify({"error": "Could not detect a clear face. Try another photo."}), 400
@@ -172,40 +160,7 @@ def analyze():
         for idx, face in enumerate(results):
             region = face.get('region', {})
             emotion = face.get('dominant_emotion', 'Neutral')
-            scores = {k: float(v) for k, v in face.get('emotion', {}).items()}
-            
-            # Use custom EfficientNet model for emotion if loaded
-            if EMOTION_MODEL:
-                try:
-                    with Image.open(file_path).convert('RGB') as img:
-                        x_r, y_r, w_r, h_r = region['x'], region['y'], region['w'], region['h']
-                        # Add a small buffer to the crop
-                        pad = 10
-                        left = max(0, x_r - pad)
-                        top = max(0, y_r - pad)
-                        right = min(img.width, x_r + w_r + pad)
-                        bottom = min(img.height, y_r + h_r + pad)
-                        
-                        face_crop = img.crop((left, top, right, bottom))
-                        face_crop = face_crop.resize((96, 96), Image.Resampling.LANCZOS)
-                        face_array = np.array(face_crop) / 255.0
-                        face_array = np.expand_dims(face_array, axis=0)
-                        face_array = face_array.astype(np.float32)
-                        
-                        # Use model.predict on a numpy array explicitly to avoid KerasTensor issues
-                        # in mixed Keras 2/3 environments
-                        preds = EMOTION_MODEL.predict(face_array, verbose=0)[0]
-                        
-                        # Load labels from map
-                        if os.path.exists("label_map.json"):
-                            with open("label_map.json", "r") as f:
-                                label_map = json.load(f)
-                            # Convert indices to readable labels and scale to 100
-                            scores = {label_map[str(i)].capitalize(): float(preds[i]) * 100 for i in range(len(preds))}
-                            emotion = max(scores, key=scores.get)
-                except Exception as e:
-                    print(f"Custom model inference error: {e}")
-
+            scores = face.get('emotion', {})
             confidence = float(face.get('face_confidence', 0))
             
             # Save cropped face for history
